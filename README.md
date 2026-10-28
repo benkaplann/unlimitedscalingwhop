@@ -50,6 +50,8 @@ Adaptive pricing is **disabled** (`adaptive_pricing_enabled: false`) on every pl
 
 USD plans enable only ACH (`us_bank_account`) and Bank Wire (`bank_wire`). EUR plans up to €20,000 total including the ad spend fee enable SEPA (`sepa_debit`) and EU bank transfer (`eu_bank_transfer`). Above €20,000, SEPA is explicitly disabled and EU bank transfer is the sole enabled method, so Whop selects it by default. Larger EUR top-ups are allowed rather than blocked by SEPA's individual cap. Whop still applies its other country and amount eligibility rules. Card, crypto, US bank transfer and opposite-currency methods are disabled, and platform defaults are excluded.
 
+**Current Whop account restriction (October 28, 2026):** creating a €25,625 plan was rejected with “Purchases over $20000 USD are not enabled for this account unless paid by bank wire on a one-time USD plan.” The application supports EU-bank-transfer-only checkout above SEPA's cap, but this business needs Whop approval for higher-value non-USD purchases before that path can be used. `/api/checkout` returns an actionable `ACCOUNT_PURCHASE_LIMIT` error (HTTP 422), directing the buyer to USD Bank Wire or a Whop limit increase. The limit is not hard-coded into quote calculation; once Whop enables the account, these EUR amounts work without changing the fallback logic.
+
 The business is Unlimited Scaling (`biz_3bscA1qgC9BH6X`), using a dedicated hidden top-up product. Payment and plan metadata record fixed-currency pricing, base spend and fee separately; only base spend should be credited as ad budget.
 
 Create a webhook in **Dashboard → Developer → Webhooks**, select **`payment.succeeded`**, and point it to **`https://<domain>/api/webhooks/whop`**. Store its signing secret as `WHOP_WEBHOOK_SECRET`.

@@ -44,7 +44,14 @@ export async function POST(request: Request) {
     const planId = await resolvePlanId(accountId, productId, quote.amount, quote.feePercent, quote.currency);
     return Response.json({ planId, quote }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    const err = error as { error?: { message?: string }; message?: string };
-    return Response.json({ error: err?.error?.message ?? err?.message ?? "Unable to load payment options." }, { status: 502 });
+    const err = error as { body?: { error?: { message?: string } }; error?: { message?: string }; message?: string; statusCode?: number };
+    const message = err?.body?.error?.message ?? err?.error?.message ?? err?.message ?? "Unable to load payment options.";
+    if (message.includes("Purchases over") && message.includes("bank wire")) {
+      return Response.json({
+        code: "ACCOUNT_PURCHASE_LIMIT",
+        error: "Whop has not enabled this EUR amount for this business. Choose USD with Bank Wire, or ask Whop to raise the business’s purchase limit.",
+      }, { status: 422 });
+    }
+    return Response.json({ error: message }, { status: err?.statusCode === 400 ? 422 : 502 });
   }
 }

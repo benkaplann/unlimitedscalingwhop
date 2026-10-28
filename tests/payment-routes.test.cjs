@@ -6,11 +6,11 @@ const preferences = loadTypeScript('lib/payment-methods.ts');
 const plans = loadTypeScript('lib/whop-plans.ts', { '@/lib/payment-methods': preferences, '@/lib/top-up': pricing });
 const env = { WHOP_API_KEY: 'test-key', WHOP_ACCOUNT_ID: 'biz_test', WHOP_TOPUP_PRODUCT_ID: 'prod_test', NEXT_PUBLIC_SITE_URL: 'https://example.com' };
 const request = (body) => new Request('https://example.com/api/test', { method: 'POST', body: JSON.stringify(body) });
-function checkoutRoute() {
+function checkoutRoute(failure) {
   const calls = [];
   const { POST } = loadTypeScript('app/api/checkout/route.ts', {
     '@/lib/top-up': pricing,
-    '@/lib/whop-plans': { getTopUpPlan: async (_, account, product, quote) => { calls.push({ account, product, quote }); return { id: 'plan_test' }; } },
+    '@/lib/whop-plans': { getTopUpPlan: async (_, account, product, quote) => { calls.push({ account, product, quote }); if (failure) throw failure; return { id: 'plan_test' }; } },
     '@whop/sdk': { WhopClient: class {} }, 'next/cache': { unstable_cache: (fn) => fn },
   }, { process: { env } });
   return { POST, calls };
@@ -80,4 +80,13 @@ test('EUR payments preserve currency and never mark the amount as USD', async ()
   assert.equal((await POST(request({ ...validPayment, currency: 'eur' }))).status, 200);
   assert.equal(charges[0].metadata.currency, 'eur');
   assert.equal(charges[0].metadata.topup_amount_usd, undefined);
+});
+
+test('Whop account limits return an actionable error instead of a raw SDK error', async () => {
+  const { POST } = checkoutRoute({ statusCode: 400, body: { error: { message: 'Purchases over $20000 USD are not enabled for this account unless paid by bank wire on a one-time USD plan.' } } });
+  const response = await POST(request({ amount: 25000, feePercent: 2.5, currency: 'eur' }));
+  assert.equal(response.status, 422);
+  const body = await response.json();
+  assert.equal(body.code, 'ACCOUNT_PURCHASE_LIMIT');
+  assert.match(body.error, /Choose USD with Bank Wire/);
 });
