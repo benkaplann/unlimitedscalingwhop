@@ -1,0 +1,8 @@
+.env
+.env.*
+.git
+.vercel
+.next
+node_modules
+artifacts
+*.tsbuildinfo

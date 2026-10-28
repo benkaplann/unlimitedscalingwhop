@@ -1,0 +1,29 @@
+import type { Metadata } from "next";
+import { preloadHints } from "@whop/elements";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "Top up your ad spend | Unlimited Scaling",
+  description:
+    "Keep your next period moving. Securely top up your Unlimited Scaling ad spend with a payment method that works for you.",
+  robots: { index: false, follow: false },
+};
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="en">
+      <head>
+        {preloadHints({ wallets: false }).map((hint) => (
+          <link key={`${hint.rel}:${hint.href}`} {...hint} />
+        ))}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,450;12..96,500;12..96,550;12..96,600;12..96,650;12..96,700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+}

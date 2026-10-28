@@ -1,0 +1,75 @@
+import { WhopClient } from "@whop/sdk";
+import { calculateTopUp, isValidAmount, isValidFeePercent, topUpMetadata } from "@/lib/top-up";
+import { isTopUpPlanForAmount } from "@/lib/whop-plans";
+
+export const runtime = "nodejs";
+
+export async function POST(request: Request) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Enter a valid JSON request body." }, { status: 400 });
+  }
+
+  if (typeof body !== "object" || body === null) {
+    return Response.json({ error: "Enter a valid payment request." }, { status: 400 });
+  }
+
+  const { amount, feePercent, confirmationToken, orderId, planId, currency = "usd", forceUsd = false } = body as Record<string, unknown>;
+  if (!isValidAmount(amount)) {
+    return Response.json({ error: "Top-up amount must be between 100 and 500,000 in the chosen currency, with no more than two decimal places." }, { status: 400 });
+  }
+  if (!isValidFeePercent(feePercent)) {
+    return Response.json({ error: "Ad spend fee must be between 2.5% and 5%, with no more than two decimal places." }, { status: 400 });
+  }
+  if (currency !== "usd" || typeof forceUsd !== "boolean") {
+    return Response.json({ error: "Top-ups are priced in USD. Whop handles local-currency conversion at checkout." }, { status: 400 });
+  }
+  const quote = calculateTopUp(amount, feePercent);
+  if (typeof confirmationToken !== "string" || !confirmationToken.startsWith("ctok_") || confirmationToken.length > 4096) {
+    return Response.json({ error: "A confirmation token is required." }, { status: 400 });
+  }
+  if (typeof orderId !== "string" || !/^topup_[a-z0-9]{1,32}$/.test(orderId)) {
+    return Response.json({ error: "A valid order reference is required." }, { status: 400 });
+  }
+  if (typeof planId !== "string" || !/^plan_[a-zA-Z0-9]+$/.test(planId)) {
+    return Response.json({ error: "Reload payment options and try again." }, { status: 400 });
+  }
+
+  try {
+    const token = process.env.WHOP_API_KEY;
+    const accountId = process.env.WHOP_ACCOUNT_ID;
+    const productId = process.env.WHOP_TOPUP_PRODUCT_ID;
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    if (!token || !accountId || !productId || !siteUrl) {
+      return Response.json({ error: "Payments are temporarily unavailable. Please try again later." }, { status: 503 });
+    }
+    const origin = new URL(siteUrl).origin;
+    const returnUrl = `${origin}/checkout/return?${new URLSearchParams({ order: orderId })}`;
+    const whop = new WhopClient({ token });
+    // Verify the token and the exact plan displayed to the buyer before charging.
+    const confirmation = await whop.confirmationTokens.retrieve({ id: confirmationToken, account_id: accountId });
+    if (confirmation.status !== "pending") {
+      return Response.json({ error: "Your payment details expired or were already used. Please try again." }, { status: 400 });
+    }
+    const plan = await whop.plans.retrieve({ id: planId });
+    if (!isTopUpPlanForAmount(plan, accountId, productId, quote, forceUsd)) {
+      return Response.json({ error: "Your payment options do not match the top-up amount and fee. Please choose them again." }, { status: 400 });
+    }
+    const payment = await whop.payments.create({
+      account_id: accountId,
+      confirmation_token: confirmationToken,
+      plan_id: plan.id,
+      return_url: returnUrl,
+      metadata: { ...topUpMetadata(quote, forceUsd), order_id: orderId },
+    });
+
+    return Response.json({ id: payment.id, status: payment.status, client_secret: payment.client_secret }, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch (error) {
+    const err = error as { error?: { message?: string }; message?: string };
+    return Response.json({ error: err?.error?.message ?? err?.message ?? "Unable to process your payment." }, { status: 502 });
+  }
+}
