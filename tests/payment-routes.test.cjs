@@ -10,15 +10,15 @@ function checkoutRoute() {
   const calls = [];
   const { POST } = loadTypeScript('app/api/checkout/route.ts', {
     '@/lib/top-up': pricing,
-    '@/lib/whop-plans': { getTopUpPlan: async (_, account, product, quote, forceUsd) => { calls.push({ account, product, quote, forceUsd }); return { id: 'plan_test' }; } },
+    '@/lib/whop-plans': { getTopUpPlan: async (_, account, product, quote) => { calls.push({ account, product, quote }); return { id: 'plan_test' }; } },
     '@whop/sdk': { WhopClient: class {} }, 'next/cache': { unstable_cache: (fn) => fn },
   }, { process: { env } });
   return { POST, calls };
 }
-function payRoute(planChange = {}) {
-  const quote = pricing.calculateTopUp(1000, 2.5);
-  const plan = { id: 'plan_test', account: { id: 'biz_test' }, product: { id: 'prod_test' }, currency: 'usd', initial_price: 1025,
-    plan_type: 'one_time', visibility: 'quick_link', adaptive_pricing_enabled: true, metadata: pricing.topUpMetadata(quote), payment_method_configuration: preferences.topUpPaymentConfiguration, ...planChange };
+function payRoute(planChange = {}, currency = "usd") {
+  const quote = pricing.calculateTopUp(1000, 2.5, currency);
+  const plan = { id: 'plan_test', account: { id: 'biz_test' }, product: { id: 'prod_test' }, currency, initial_price: 1025,
+    plan_type: 'one_time', visibility: 'quick_link', adaptive_pricing_enabled: false, metadata: pricing.topUpMetadata(quote), payment_method_configuration: preferences.getTopUpPaymentConfiguration(quote), ...planChange };
   const charges = [];
   const client = { confirmationTokens: { retrieve: async () => ({ status: 'pending' }) }, plans: { retrieve: async () => plan },
     payments: { create: async (input) => { charges.push(input); return { id: 'pay_test', status: 'pending' }; } } };
@@ -36,11 +36,10 @@ test('checkout calculates total on the server and ignores a supplied fake total'
   const body = await response.json();
   assert.equal(body.quote.total, 1025);
   assert.equal(calls[0].quote.currency, 'usd');
-  assert.equal(calls[0].forceUsd, false);
   assert.equal(calls[0].account, 'biz_test');
 });
-test('both endpoints reject invalid fee, nominal currency and malformed USD override before calling Whop', async () => {
-  for (const extra of [{ feePercent: 2.49 }, { feePercent: 5.01 }, { feePercent: null }, { feePercent: '2.5' }, { feePercent: 3.125 }, { currency: 'gbp' }, { currency: 'eur' }, { forceUsd: 'true' }]) {
+test('both endpoints reject invalid fee and unsupported currency before calling Whop', async () => {
+  for (const extra of [{ feePercent: 2.49 }, { feePercent: 5.01 }, { feePercent: null }, { feePercent: '2.5' }, { feePercent: 3.125 }, { currency: 'gbp' }, { currency: 'EUR' }, { currency: {} }]) {
     const checkout = checkoutRoute();
     const pay = payRoute();
     assert.equal((await checkout.POST(request({ ...validPayment, ...extra }))).status, 400);
@@ -67,13 +66,18 @@ test('charge rejects a plan with an unmarked-up price or another business', asyn
   }
 });
 
-test('checkout accepts the USD override without changing base spend or the fee', async () => {
+test('large EUR quotes are allowed instead of applying a blanket SEPA cap', async () => {
   const { POST, calls } = checkoutRoute();
-  const response = await POST(request({ amount: 100000, feePercent: 5, forceUsd: true }));
+  const response = await POST(request({ amount: 100000, feePercent: 5, currency: 'eur' }));
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.equal(body.forceUsd, true);
   assert.equal(body.quote.total, 105000);
-  assert.equal(calls[0].quote.currency, 'usd');
-  assert.equal(calls[0].forceUsd, true);
+  assert.equal(body.quote.currency, 'eur');
+  assert.equal(calls[0].quote.currency, 'eur');
+});
+test('EUR payments preserve currency and never mark the amount as USD', async () => {
+  const { POST, charges } = payRoute({}, 'eur');
+  assert.equal((await POST(request({ ...validPayment, currency: 'eur' }))).status, 200);
+  assert.equal(charges[0].metadata.currency, 'eur');
+  assert.equal(charges[0].metadata.topup_amount_usd, undefined);
 });

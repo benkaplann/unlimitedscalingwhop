@@ -5,6 +5,7 @@ import { loadWhop } from "@whop/elements";
 import { Checkout, CheckoutElement, WhopElements } from "@whop/elements-react";
 import { ArrowIcon, LockIcon } from "@/components/Icons";
 import { calculateTopUp, formatAmount, isValidAmount, isValidFeePercent, MAX_FEE_PERCENT, MAX_TOP_UP, MIN_FEE_PERCENT, MIN_TOP_UP, topUpMetadata, type TopUpCurrency } from "@/lib/top-up";
+import { MAX_SEPA_TOTAL_CENTS } from "@/lib/payment-methods";
 import { createPlanPreparer } from "@/lib/checkout-preparation";
 
 const presets = [10_000, 25_000, 50_000, 75_000, 100_000];
@@ -36,9 +37,7 @@ export default function TopUp() {
   const [value, setValue] = useState("10000");
   const [feeValue, setFeeValue] = useState("2.5");
   const [feeTouched, setFeeTouched] = useState(false);
-  const currency = "usd" as const;
-  const [forceUsd, setForceUsd] = useState(false);
-  const [checkoutLoading, setCheckoutLoading] = useState(true);
+  const [currency, setCurrency] = useState<TopUpCurrency>("usd");
   const [completed, setCompleted] = useState(false);
   const [elementError, setElementError] = useState<string | null>(null);
   const [checkoutVersion, setCheckoutVersion] = useState(0);
@@ -51,17 +50,17 @@ export default function TopUp() {
   const preparingRef = useRef(false);
   const [loadError, setLoadError] = useState<{ retry: () => void } | null>(null);
   const [elements, setElements] = useState<ReturnType<typeof loadWhop> | null>(null);
-  const [preparePlan] = useState(() => createPlanPreparer(async (quote, forceUsd) => {
+  const [preparePlan] = useState(() => createPlanPreparer(async (quote) => {
     const result = await fetch("/api/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: quote.amount, feePercent: quote.feePercent, forceUsd }),
+      body: JSON.stringify({ amount: quote.amount, feePercent: quote.feePercent, currency: quote.currency }),
       signal: AbortSignal.timeout(15_000),
     });
     const response = await result.json();
     if (!result.ok || typeof response.planId !== "string" || !/^plan_[a-zA-Z0-9]+$/.test(response.planId) ||
       response.quote?.totalCents !== quote.totalCents || response.quote?.amountCents !== quote.amountCents ||
-      response.quote?.feeBasisPoints !== quote.feeBasisPoints || response.quote?.currency !== "usd" || response.forceUsd !== forceUsd) {
+      response.quote?.feeBasisPoints !== quote.feeBasisPoints || response.quote?.currency !== quote.currency) {
       throw new Error(response.error || "We couldn’t load payment options. Please try again.");
     }
     return response.planId as string;
@@ -73,7 +72,7 @@ export default function TopUp() {
   const feePercent = Number(feeValue);
   const feeInputError = feeTouched ? feeError(feeValue) : null;
   const quote = useMemo(() => isValidAmount(dollars) && isValidFeePercent(feePercent) ? calculateTopUp(dollars, feePercent, currency) : null, [dollars, feePercent, currency]);
-  const checkoutMetadata = useMemo(() => quote ? { ...topUpMetadata(quote, forceUsd), order_id: orderId } : undefined, [quote, forceUsd, orderId]);
+  const checkoutMetadata = useMemo(() => quote ? { ...topUpMetadata(quote), order_id: orderId } : undefined, [quote, orderId]);
   const error = (touched ? amountError(value, currency) : null);
   const accountId = process.env.NEXT_PUBLIC_WHOP_ACCOUNT_ID;
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
@@ -112,9 +111,7 @@ export default function TopUp() {
     try {
       if (configured) {
         setPlanId(await preparePlan(quote));
-        setForceUsd(false);
         setElementError(null);
-        setCheckoutLoading(true);
         setCompleted(false);
       }
       setOrderId(`topup_${Date.now().toString(36)}`);
@@ -134,25 +131,6 @@ export default function TopUp() {
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
-  async function makeUsd() {
-    if (!quote || forceUsd || preparingRef.current || completed) return;
-    preparingRef.current = true;
-    setPreparing(true);
-    setCheckoutError(null);
-    try {
-      const usdPlan = await preparePlan(quote, true);
-      setPlanId(usdPlan);
-      setForceUsd(true);
-      setElementError(null);
-      setCheckoutLoading(true);
-    } catch (error) {
-      setCheckoutError(errorMessage(error));
-    } finally {
-      preparingRef.current = false;
-      setPreparing(false);
-    }
-  }
-
   return (
     <WhopElements elements={elements} appearance={appearance} onLoadError={(_error, retry) => setLoadError({ retry })}>
     <div className="checkout-wrap">
@@ -166,9 +144,17 @@ export default function TopUp() {
             <h2 className="panel-title">Make room for more.</h2>
             <p className="panel-description">Choose how much you’d like to add.</p>
 
+            <div className="currency-control">
+              <span id="currency-label">Payment currency</span>
+              <div className="currency-toggle" role="group" aria-labelledby="currency-label">
+                {(["usd", "eur"] as const).map((option) => (
+                  <button key={option} type="button" aria-pressed={currency === option} disabled={preparing} onClick={() => setCurrency(option)}>{option.toUpperCase()}</button>
+                ))}
+              </div>
+            </div>
             <label className="amount-label" htmlFor="amount">Top-up amount <span>{currency.toUpperCase()}</span></label>
             <div className={`amount-field${error ? " has-error" : ""}`}>
-              <span className="currency-symbol" aria-hidden="true">$</span>
+              <span className="currency-symbol" aria-hidden="true">{currency === "usd" ? "$" : "€"}</span>
               <input
                 id="amount"
                 name="amount"
@@ -189,14 +175,14 @@ export default function TopUp() {
               />
             </div>
             <div className="amount-help">
-              <p id="amount-hint">{formatAmount(MIN_TOP_UP, currency)} minimum <span>·</span> $500,000 maximum</p>
+              <p id="amount-hint">{formatAmount(MIN_TOP_UP, currency)} minimum <span>·</span> {formatAmount(MAX_TOP_UP, currency)} maximum</p>
               {error && <p className="form-error" id="amount-error" role="alert">{error}</p>}
             </div>
 
             <div className="preset-grid" aria-label="Suggested top-up amounts">
               {presets.map((amount) => (
                 <button key={amount} className={`preset${dollars === amount ? " selected" : ""}`} type="button" disabled={preparing} aria-pressed={dollars === amount} onClick={() => { setValue(String(amount)); setTouched(true); }}>
-                  ${amount / 1000}k
+                  {currency === "usd" ? "$" : "€"}{amount / 1000}k
                 </button>
               ))}
             </div>
@@ -225,8 +211,8 @@ export default function TopUp() {
             <div className="payment-summary">
               <div><span>Ad spend top-up</span><span>{formatAmount(dollars, currency)}</span></div>
               <div className="fee-summary-row"><span>Ad spend fee ({feePercent}%)</span><span>{quote ? formatAmount(quote.fee, currency) : "—"}</span></div>
-              <div className="quote-total"><span>USD total</span><strong>{quote ? formatAmount(quote.total, currency) : "—"}</strong></div>
-              <button className="text-button" type="button" onClick={changeAmount} disabled={preparing || completed}>Change amount or fee</button>
+              <div className="quote-total"><span>{currency.toUpperCase()} total</span><strong>{quote ? formatAmount(quote.total, currency) : "—"}</strong></div>
+              <button className="text-button" type="button" onClick={changeAmount} disabled={preparing || completed}>Change amount, fee or currency</button>
             </div>
             {configured && planId && quote ? (
               <>
@@ -236,27 +222,20 @@ export default function TopUp() {
                     <button className="text-button" type="button" onClick={() => { loadError.retry(); setLoadError(null); }}>Reload payment form</button>
                   </div>
                 )}
-                <p className="currency-note">{forceUsd ? "Payment currency is USD." : "Your local-currency total and eligible bank methods appear below."}</p>
+                <p className="currency-note">{currency === "usd" ? "Pay in USD with ACH or Bank Wire." : quote.totalCents > MAX_SEPA_TOTAL_CENTS ? "Pay in EUR by EU bank transfer. SEPA is unavailable above €20,000 including the fee." : "Pay in EUR with SEPA or EU bank transfer."}</p>
                 {elementError && <div className="payment-load-error" role="alert">
                   <p className="form-error">{elementError}</p>
-                  <button className="text-button" type="button" onClick={() => { setElementError(null); setCheckoutLoading(true); setCheckoutVersion((version) => version + 1); }}>Reload checkout</button>
+                  <button className="text-button" type="button" onClick={() => { setElementError(null); setCheckoutVersion((version) => version + 1); }}>Reload checkout</button>
                 </div>}
                 <Checkout key={`${planId}:${checkoutVersion}`} plan={planId}
                   metadata={checkoutMetadata}
                   returnUrl={`${siteUrl}/checkout/return?order=${orderId}`}
-                  onLoadingChange={setCheckoutLoading}
                   onComplete={() => setCompleted(true)}>
                   <CheckoutElement fallback={<div className="checkout-loading" role="status">Loading secure checkout…</div>}
-                    onReady={() => setCheckoutLoading(false)}
-                    onError={(event) => { setElementError(event.message || "Unable to load checkout. Please try again."); setCheckoutLoading(false); }} />
+                    onError={(event) => { setElementError(event.message || "Unable to load checkout. Please try again."); }} />
                 </Checkout>
                 {checkoutError && <p className="form-error" role="alert">{checkoutError}</p>}
-                <div className="usd-override">
-                  {forceUsd ? <p role="status">Paying in US dollars.</p> : <>
-                    <p>Prefer to pay in US dollars?</p>
-                    <button className="text-button" type="button" onClick={makeUsd} disabled={preparing || checkoutLoading || completed}>{preparing ? "Switching to USD…" : "Make USD"}</button>
-                  </>}
-                </div>
+
               </>
             ) : (
               <div className="configuration-notice" role="status">

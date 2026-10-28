@@ -109,9 +109,6 @@ h1 { margin: 0; font-size: clamp(44px, 4.7vw, 66px); font-weight: 500; line-heig
 .payment-load-error { margin-bottom: 20px; }
 .currency-note { color: var(--secondary); font-size: 12px; line-height: 1.6; margin: 0 0 20px; }
 .checkout-loading { min-height: 240px; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
-.usd-override { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); text-align: center; }
-.usd-override p { color: var(--muted); font-size: 11px; margin: 0; }
-.usd-override .text-button { padding: 7px 12px; margin-top: 5px; }
 .form-error { color: #ffa1af; font-size: 12px; line-height: 1.6; margin: 0; }
 .checkout-error { margin-bottom: 14px; }
 .configuration-notice { text-align: center; background: #12121b; border: 1px solid #2b2b3d; padding: 28px 18px; border-radius: 8px; }
@@ -183,3 +180,8 @@ h1 { margin: 0; font-size: clamp(44px, 4.7vw, 66px); font-weight: 500; line-heig
   .return-panel h1 { font-size: 30px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+
+.currency-control { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 25px; color: var(--secondary); font-size: 12px; }
+.currency-toggle { display: inline-flex; padding: 3px; border: 1px solid #34343f; border-radius: 7px; background: #141418; }
+.currency-toggle button { border: 1px solid transparent; border-radius: 4px; background: transparent; color: #aaaabb; padding: 8px 14px; font-size: 11px; }
+.currency-toggle button[aria-pressed="true"] { color: #fff; background: #303061; border-color: #6666bd; }

@@ -32,9 +32,9 @@ export function topUpQuoteKey(quote: TopUpQuote) {
   return `${quote.currency}-${quote.amountCents}-${quote.feeBasisPoints}`;
 }
 
-export function topUpMetadata(quote: TopUpQuote, forceUsd = false) {
+export function topUpMetadata(quote: TopUpQuote) {
   return {
-    source: "topup-site", currency: quote.currency, pricing_mode: forceUsd ? "forced_usd" : "adaptive",
+    source: "topup-site", currency: quote.currency, pricing_mode: "fixed_currency",
     topup_amount: String(quote.amount), ad_spend_fee_percent: String(quote.feePercent),
     ad_spend_fee_amount: String(quote.fee), total_amount: String(quote.total),
     ...(quote.currency === "usd" ? { topup_amount_usd: String(quote.amount) } : {}),

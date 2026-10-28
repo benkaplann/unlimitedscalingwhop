@@ -19,9 +19,12 @@ test('rejects missing, nonnumeric, out-of-range and excessive-precision fees', (
     assert.throws(() => calculateTopUp(1000, fee));
   }
 });
-test('payment metadata identifies adaptive versus forced USD pricing', () => {
-  const quote = calculateTopUp(10000, 2.5);
-  assert.equal(topUpMetadata(quote).pricing_mode, 'adaptive');
-  assert.equal(topUpMetadata(quote, true).pricing_mode, 'forced_usd');
-  assert.equal(topUpMetadata(quote, true).topup_amount_usd, '10000');
+test('payment metadata records fixed-currency pricing and EUR is not labeled USD', () => {
+  const usd = topUpMetadata(calculateTopUp(10000, 2.5));
+  const eur = topUpMetadata(calculateTopUp(10000, 2.5, 'eur'));
+  assert.equal(usd.pricing_mode, 'fixed_currency');
+  assert.equal(usd.topup_amount_usd, '10000');
+  assert.equal(eur.pricing_mode, 'fixed_currency');
+  assert.equal(eur.currency, 'eur');
+  assert.equal(eur.topup_amount_usd, undefined);
 });

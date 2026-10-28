@@ -74,13 +74,3 @@ test("a fee or currency change gets its own plan preparation", async () => {
   assert.equal(await prepare(quote(1000, 5, "eur")), "plan_3");
   assert.equal(await prepare(quote(1000, 2.5)), "plan_1");
 });
-
-test('adaptive and forced USD preparation are cached separately', async () => {
-  const { create } = loadPreparer();
-  let calls = 0;
-  const prepare = create(async (_, forceUsd) => { calls++; return forceUsd ? 'plan_usd' : 'plan_adaptive'; });
-  assert.equal(await prepare(quote()), 'plan_adaptive');
-  assert.equal(await prepare(quote(), true), 'plan_usd');
-  assert.equal(await prepare(quote()), 'plan_adaptive');
-  assert.equal(calls, 2);
-});
